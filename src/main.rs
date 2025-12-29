@@ -85,6 +85,109 @@ fn guess_gateway(interface: &NetworkInterface) -> Ipv4Addr {
     Ipv4Addr::from(base + 1)
 }
 
+/// 检查IP是否在同一网段
+fn is_in_same_network(ip: Ipv4Addr, network: &IpNetwork) -> bool {
+    match network {
+        IpNetwork::V4(net) => net.contains(ip),
+        _ => false,
+    }
+}
+
+/// 获取网关IP（带验证）
+fn get_gateway_ip(interface: &NetworkInterface) -> Ipv4Addr {
+    let guessed = guess_gateway(interface);
+    println!("推测网关 IP: {}", guessed);
+    
+    // 获取接口的网段信息，用于验证用户输入的IP是否在同一网段
+    let interface_network = interface
+        .ips
+        .iter()
+        .find(|ip| ip.is_ipv4())
+        .expect("未找到 IPv4 网段");
+    
+    loop {
+        print!("如果网关不是 {}，请输入 'N' 手动输入，或直接按回车确认: ", guessed);
+        io::stdout().flush().unwrap();
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        let input = input.trim();
+        
+        if input.is_empty() {
+            println!("使用推测网关: {}\n", guessed);
+            return guessed;
+        }
+        
+        if input.eq_ignore_ascii_case("N") {
+            println!("\n请手动输入网关IP地址:");
+            
+            loop {
+                print!("网关IP: ");
+                io::stdout().flush().unwrap();
+                
+                let mut ip_input = String::new();
+                io::stdin().read_line(&mut ip_input).unwrap();
+                let ip_input = ip_input.trim();
+                
+                match ip_input.parse::<Ipv4Addr>() {
+                    Ok(ip) => {
+                        // 验证IP是否在同一网段
+                        if is_in_same_network(ip, interface_network) {
+                            println!("网关已设置为: {}\n", ip);
+                            return ip;
+                        } else {
+                            println!("警告: IP {} 不在接口网段内，请确认是否正确", ip);
+                            print!("是否继续使用该IP？(y/N): ");
+                            io::stdout().flush().unwrap();
+                            
+                            let mut confirm = String::new();
+                            io::stdin().read_line(&mut confirm).unwrap();
+                            
+                            if confirm.trim().eq_ignore_ascii_case("Y") {
+                                println!("网关已设置为: {}\n", ip);
+                                return ip;
+                            } else {
+                                println!("请重新输入网关IP");
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        println!("无效的IP地址格式，请重新输入");
+                    }
+                }
+            }
+        } else {
+            // 用户可能直接输入了IP地址
+            match input.parse::<Ipv4Addr>() {
+                Ok(ip) => {
+                    // 验证IP是否在同一网段
+                    if is_in_same_network(ip, interface_network) {
+                        println!("使用输入网关: {}\n", ip);
+                        return ip;
+                    } else {
+                        println!("警告: IP {} 不在接口网段内", ip);
+                        print!("是否继续使用该IP？(y/N): ");
+                        io::stdout().flush().unwrap();
+                        
+                        let mut confirm = String::new();
+                        io::stdin().read_line(&mut confirm).unwrap();
+                        
+                        if confirm.trim().eq_ignore_ascii_case("Y") {
+                            println!("网关已设置为: {}\n", ip);
+                            return ip;
+                        } else {
+                            println!("请重新选择操作");
+                        }
+                    }
+                }
+                Err(_) => {
+                    println!("无效输入，请输入 'N' 或直接按回车");
+                }
+            }
+        }
+    }
+}
+
 /// 被动监听 ARP Reply，检测 ARP 欺骗行为
 fn arp_monitor(
     rx_mutex: Arc<Mutex<Box<dyn DataLinkReceiver>>>,
@@ -217,9 +320,8 @@ fn main() {
         interface.name, interface.mac, my_ip
     );
 
-    // 推测网关
-    let gateway_ip = guess_gateway(&interface);
-    println!("推测网关 IP: {}\n", gateway_ip);
+    // 获取网关IP
+    let gateway_ip = get_gateway_ip(&interface);
 
     // 打开数据链路通道（只用 RX）
     let (_, rx) = match datalink::channel(&interface, Default::default()) {
