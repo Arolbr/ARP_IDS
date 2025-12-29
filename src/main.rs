@@ -238,7 +238,7 @@ fn main() {
         arp_monitor(rx_for_monitor, r, gateway_ip);
     });
 
-    // Ctrl+C 优雅退出
+    // Ctrl+C 退出
     ctrlc::set_handler({
         let r = running.clone();
         move || {
