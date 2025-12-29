@@ -1,0 +1,11 @@
+[package]
+name = "ARP_detection"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+pnet = { version = "0.31", features = ["std"] }
+ipnetwork = "0.19"
+rayon = "1.9"
+local-ip-address = "0.6"
+ctrlc = "3.4"
